@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import time
+import pandas as pd
 
 st.set_page_config(page_title="EMG Dashboard", layout="wide")
 
@@ -65,3 +66,6 @@ while run:
     chart.line_chart(data)
 
     time.sleep(0.1)
+if data:
+    df = pd.DataFrame({"emg":data})
+    st.download_button("Download Data", df.to_csv(index=False), "emg_data.csv")
