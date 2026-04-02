@@ -31,7 +31,7 @@ if mode == "Real EMG":
 
 run = st.sidebar.checkbox("Start")
 
-while run:
+if run:
     # Get value
     if mode == "Simulation":
         value = random.randint(900, 2500)
@@ -42,16 +42,18 @@ while run:
             try:
                 value = int(line.split(":")[1])
             except:
-                continue
+                st.stop()
         else:
-            continue
+            st.stop()
     else:
-        break
+        st.stop()
 
     # Store data
-    data.append(value)
-    data = data[-100:]
-
+    if "data" not in st.session_state:
+        st.session_state.data = []
+    st.session_state.data.append(value)
+    st.session_state.data = st.session_state.data[-100:]
+    
     # Decision logic
     if value < LOW_THRESHOLD:
         action = "STOP"
@@ -63,9 +65,11 @@ while run:
     # Update UI
     value_box.metric("EMG Value", value)
     action_box.success(f"Action: {action}")
-    chart.line_chart(data)
+    chart.line_chart(st.session_state.data)
 
     time.sleep(0.1)
+    st.rerun()
+    
 if data:
     df = pd.DataFrame({"emg":data})
     st.download_button("Download Data", df.to_csv(index=False), "emg_data.csv")
