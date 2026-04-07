@@ -1,3 +1,9 @@
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+if "data" not in st.session_state:
+    st.session_state.data = []
+
 import streamlit as st
 import random
 import time
@@ -29,10 +35,18 @@ if mode == "Real EMG":
     except:
         st.error("Serial not connected")
 
-run = st.sidebar.checkbox("Start")
+col1, col2 = st.sidebar.columns(2)
 
-if run:
-    # Get value
+with col1:
+    if st.button("▶ Start"):
+        st.session_state.running = True
+
+with col2:
+    if st.button("⏸ Stop"):
+        st.session_state.running = False
+
+if st.session_state.running:
+
     if mode == "Simulation":
         value = random.randint(900, 2500)
 
@@ -48,11 +62,17 @@ if run:
     else:
         st.stop()
 
-    # Store data
-    if "data" not in st.session_state:
-        st.session_state.data = []
     st.session_state.data.append(value)
     st.session_state.data = st.session_state.data[-100:]
+
+    time.sleep(0.1)
+    st.rerun()
+    
+    # Store data
+    if st.session_state.data:
+        value = st.session_state.data[-1]
+    else:
+        value = 0
     
     # Decision logic
     if value < LOW_THRESHOLD:
@@ -64,12 +84,10 @@ if run:
 
     # Update UI
     value_box.metric("EMG Value", value)
-    action_box.success(f"Action: {action}")
+    action_box.write(f"Action: {action}")
     chart.line_chart(st.session_state.data)
 
-    time.sleep(0.1)
-    st.rerun()
     
-if data:
-    df = pd.DataFrame({"emg":data})
+if st.session_state.data:
+    df = pd.DataFrame({"emg": st.session_state.data})
     st.download_button("Download Data", df.to_csv(index=False), "emg_data.csv")
