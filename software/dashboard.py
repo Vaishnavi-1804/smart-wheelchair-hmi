@@ -1,16 +1,16 @@
+import streamlit as st
+import random
+import time
+import pandas as pd
+
 if "running" not in st.session_state:
     st.session_state.running = False
 
 if "data" not in st.session_state:
     st.session_state.data = []
 
-import streamlit as st
-import random
-import time
-import pandas as pd
 
 st.set_page_config(page_title="EMG Dashboard", layout="wide")
-
 st.title("EMG Signal Dashboard")
 
 # Sidebar controls
