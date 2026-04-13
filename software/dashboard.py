@@ -47,34 +47,39 @@ with col2:
 
 if st.session_state.running:
 
-    # 🔹 SIMULATION MODE
+    value = None  # initialize
+
+    # 🔹 SIMULATION MODE (independent)
     if mode == "Simulation":
         value = random.randint(900, 2500)
 
-    # 🔹 REAL EMG MODE
+    # 🔹 REAL EMG MODE (independent)
     elif mode == "Real EMG":
         if ser:
             try:
                 line = ser.readline().decode().strip()
+
                 if "EMG:" in line:
                     value = int(line.split(":")[1])
                 else:
-                    st.warning("Invalid data")
-                    st.stop()
+                    st.warning("Invalid data format")
+                    st.session_state.running = False
+
             except:
-                st.warning("Error reading serial")
-                st.stop()
+                st.warning("Serial read error")
+                st.session_state.running = False
+
         else:
             st.warning("⚠️ Serial not connected")
-            st.stop()
+            st.session_state.running = False
 
-    # Store data
-    st.session_state.data.append(value)
-    st.session_state.data = st.session_state.data[-100:]
+    # 🔴 IMPORTANT: only proceed if value exists
+    if value is not None:
+        st.session_state.data.append(value)
+        st.session_state.data = st.session_state.data[-100:]
 
-    time.sleep(0.1)
-    st.rerun()
-    
+        time.sleep(0.1)
+        st.rerun()    
     # Store data
     if st.session_state.data:
         value = st.session_state.data[-1]
