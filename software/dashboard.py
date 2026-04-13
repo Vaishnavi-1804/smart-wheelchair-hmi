@@ -51,7 +51,7 @@ if st.session_state.running:
     if mode == "Simulation":
         value = random.randint(900, 2500)
 
-    # REAL EMG MODE
+    # 🔹 REAL EMG MODE
     elif mode == "Real EMG":
         if ser:
             try:
@@ -59,20 +59,21 @@ if st.session_state.running:
                 if "EMG:" in line:
                     value = int(line.split(":")[1])
                 else:
-                    return  # skip bad data
+                    st.warning("Invalid data")
+                    st.stop()
             except:
-                return
+                st.warning("Error reading serial")
+                st.stop()
         else:
             st.warning("⚠️ Serial not connected")
-            return
+            st.stop()
 
     # Store data
     st.session_state.data.append(value)
     st.session_state.data = st.session_state.data[-100:]
 
     time.sleep(0.1)
-    st.rerun() 
-
+    st.rerun()
     
     # Store data
     if st.session_state.data:
