@@ -153,7 +153,7 @@ if "Real EMG" in mode:
 # ──────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────
-st.title("🦽 Smart Wheelchair – EMG Control Dashboard")
+st.title("Smart Wheelchair – EMG Control Dashboard")
 st.caption("Human-Machine Interface | EMG + Gesture Hybrid Control System")
 
 status_placeholder = st.empty()
@@ -220,7 +220,7 @@ def render_ui():
     if len(dd) >= 10:
         condition, recommendation, exercises = analyze_muscle(dd)
         with recovery_placeholder.container():
-            st.subheader("💪 Muscle Recovery Analysis")
+            st.subheader("Muscle Recovery Analysis")
             rc1, rc2 = st.columns([1, 2])
             with rc1:
                 st.markdown(f"**Condition:** {condition}")
