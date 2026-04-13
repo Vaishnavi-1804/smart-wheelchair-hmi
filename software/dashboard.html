@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Wheelchair — EMG Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f0f13; color: #e0e0e0; padding: 20px; min-height: 100vh; }
+  h1 { font-size: 18px; font-weight: 500; color: #f0f0f0; }
+  .subtitle { font-size: 12px; color: #666; margin-top: 3px; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+  .badge.running { background: #14532d; color: #86efac; }
+  .badge.paused  { background: #3f2b00; color: #fcd34d; }
+  .mode-toggle { display: flex; border: 1px solid #333; border-radius: 7px; overflow: hidden; }
+  .mode-toggle button { border: none; padding: 5px 13px; font-size: 12px; cursor: pointer; background: transparent; color: #888; }
+  .mode-toggle button.active { background: #1e1e2e; color: #e0e0e0; font-weight: 500; }
+  button { background: transparent; border: 1px solid #444; color: #ccc; padding: 5px 14px; border-radius: 7px; font-size: 12px; cursor: pointer; }
+  button:hover { background: #1e1e2e; }
+  .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .metric-card { background: #1a1a26; border-radius: 10px; padding: 12px 16px; }
+  .metric-card .label { font-size: 11px; color: #666; margin-bottom: 5px; }
+  .metric-card .value { font-size: 26px; font-weight: 500; color: #f0f0f0; line-height: 1; }
+  .main-row { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; align-items: start; }
+  .panel { background: #141420; border: 1px solid #222; border-radius: 12px; padding: 16px; }
+  .panel-label { font-size: 11px; font-weight: 500; color: #555; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+  .chart-wrap { position: relative; height: 240px; width: 100%; }
+  .recovery-accent { border-left: 3px solid var(--rc, #444); padding-left: 12px; margin-bottom: 14px; }
+  .recovery-accent .cond { font-size: 14px; font-weight: 500; color: #f0f0f0; }
+  .recovery-accent .note { font-size: 12px; color: #888; margin-top: 4px; line-height: 1.6; }
+  .recovery-accent .refresh-tag { font-size: 11px; color: #60a5fa; margin-top: 6px; }
+  .ex-label { font-size: 11px; font-weight: 500; color: #666; margin-bottom: 6px; }
+  .ex-list { padding-left: 16px; }
+  .ex-list li { font-size: 12px; color: #888; line-height: 1.9; }
+  .collecting { font-size: 12px; color: #555; padding: 8px 0; }
+  .bottom-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .bottom-bar span { font-size: 12px; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div>
+    <h1>Smart wheelchair — EMG dashboard</h1>
+    <div class="subtitle">Real-time muscle signal monitoring and recovery analysis</div>
+  </div>
+  <div class="controls">
+    <span id="status-badge" class="badge paused">Paused</span>
+    <div class="mode-toggle">
+      <button id="btn-sim" class="active" onclick="setMode('sim')">Simulation</button>
+      <button id="btn-real" onclick="setMode('real')">Real EMG</button>
+    </div>
+    <button id="run-btn" onclick="toggleRun()">Start</button>
+  </div>
+</div>
+
+<div class="metrics">
+  <div class="metric-card">
+    <div class="label">EMG value</div>
+    <div class="value" id="emg-val">—</div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Average (session)</div>
+    <div class="value" id="avg-val">—</div>
+  </div>
+  <div class="metric-card">
+    <div class="label">Peak (session)</div>
+    <div class="value" id="peak-val">—</div>
+  </div>
+</div>
+
+<div class="main-row">
+  <div class="panel">
+    <div class="panel-label">Live EMG signal</div>
+    <div class="chart-wrap">
+      <canvas id="emg-chart"></canvas>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-label">Muscle recovery summary</div>
+    <div id="rec-panel"><div class="collecting">Collecting data — 0 / 10 samples</div></div>
+  </div>
+</div>
+
+<div class="bottom-bar">
+  <span id="sample-count">0 samples recorded</span>
+  <button onclick="downloadCSV()">Download CSV</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+let running = false, mode = 'sim';
+let history = [];
+let snapAt = -1, snap = null;
+const SNAP_EVERY = 30, MAX_PTS = 150;
+
+// Simulation: steady signal with small noise — no wild swings
+// Real variability comes from actual muscle data, not sine waves
+let simPhase = 0;
+let simTarget = 1500; // starts in normal range
+let simTargetTimer = 0;
+
+function nextSimValue() {
+  // every ~60 ticks, gently shift the target to a new level
+  simTargetTimer++;
+  if (simTargetTimer > 60) {
+    const ranges = [950, 1100, 1400, 1600, 1800, 2100, 2400];
+    simTarget = ranges[Math.floor(Math.random() * ranges.length)];
+    simTargetTimer = 0;
+  }
+  // slowly drift toward target with small noise
+  const noise = (Math.random() - 0.5) * 80;
+  const drift = (simTarget - simPhase) * 0.08;
+  simPhase += drift + noise;
+  return Math.max(700, Math.min(3000, Math.round(simPhase)));
+}
+
+const chart = new Chart(document.getElementById('emg-chart').getContext('2d'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{ data: [], borderColor: '#60a5fa', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: { min: 500, max: 3200, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#555', font: { size: 11 } } }
+    }
+  }
+});
+
+function analyzeEMG(data) {
+  const avg  = data.reduce((a, b) => a + b, 0) / data.length;
+  const peak = Math.max(...data);
+  // Use only last 30 samples for variability so it reflects current state
+  const recent = data.slice(-30);
+  const vari = Math.max(...recent) - Math.min(...recent);
+
+  if (avg < 1200) return {
+    cond: 'Weak muscle activity', color: '#378ADD',
+    note: 'Low electrical activity detected. Gentle rehabilitation recommended.',
+    ex: ['Hand grip squeezes — 3 x 10', 'Finger extension stretches', 'Wrist rotation — 2 min each side', 'Light resistance band pulls']
+  };
+  if (avg < 2000) {
+    if (vari > 600) return {
+      cond: 'Irregular activity', color: '#BA7517',
+      note: 'Uneven signals detected. Focus on slow, controlled movements.',
+      ex: ['Slow controlled arm raises', 'Isometric holds — 10 sec each', 'Rhythmic fist open and close', 'Breathing with light movement']
+    };
+    return {
+      cond: 'Normal activity', color: '#3B6D11',
+      note: 'Muscle health looks good. Maintain your current routine.',
+      ex: ['Continue current physio routine', 'Light cardio if mobility permits', 'Stay hydrated and rest well']
+    };
+  }
+  if (peak > 2800) return {
+    cond: 'High strain / fatigue', color: '#A32D2D',
+    note: 'Overexertion detected. Rest is essential right now.',
+    ex: ['Complete rest — 20 to 30 min', 'Cold compress on active muscle', 'Gentle passive stretching only', 'Elevate limb if swollen']
+  };
+  return {
+    cond: 'Elevated strain', color: '#854F0B',
+    note: 'Moderate strain detected. Reduce intensity and monitor.',
+    ex: ['Reduce reps by 50%', 'Slow down movement speed', 'Add rest intervals', 'Consult physio if it persists']
+  };
+}
+
+function renderRecovery() {
+  const n = history.length;
+  const panel = document.getElementById('rec-panel');
+  if (n < 10) { panel.innerHTML = `<div class="collecting">Collecting data — ${n} / 10 samples</div>`; return; }
+  if (snapAt < 0 || (n - snapAt) >= SNAP_EVERY) { snap = analyzeEMG(history); snapAt = n; }
+  const next = SNAP_EVERY - (n - snapAt);
+  panel.innerHTML = `
+    <div class="recovery-accent" style="--rc:${snap.color}">
+      <div class="cond">${snap.cond}</div>
+      <div class="note">${snap.note}</div>
+      <div class="refresh-tag">Refreshes in ~${next} samples</div>
+    </div>
+    <div class="ex-label">Suggested exercises</div>
+    <ul class="ex-list">${snap.ex.map(e => `<li>${e}</li>`).join('')}</ul>`;
+}
+
+function tick() {
+  if (!running) return;
+  const v = nextSimValue();
+  history.push(v);
+  if (history.length > 2000) history.shift();
+
+  document.getElementById('emg-val').textContent = v;
+  document.getElementById('avg-val').textContent = Math.round(history.reduce((a, b) => a + b, 0) / history.length);
+  document.getElementById('peak-val').textContent = Math.max(...history);
+
+  chart.data.labels.push('');
+  chart.data.datasets[0].data.push(v);
+  if (chart.data.labels.length > MAX_PTS) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+  chart.update('none');
+
+  document.getElementById('sample-count').textContent = history.length + ' samples recorded';
+  renderRecovery();
+}
+
+let timer = null;
+function toggleRun() {
+  running = !running;
+  document.getElementById('run-btn').textContent = running ? 'Stop' : 'Start';
+  const badge = document.getElementById('status-badge');
+  badge.textContent = running ? 'Running' : 'Paused';
+  badge.className = 'badge ' + (running ? 'running' : 'paused');
+  if (running) { timer = setInterval(tick, 150); } else { clearInterval(timer); }
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-sim').className = m === 'sim' ? 'active' : '';
+  document.getElementById('btn-real').className = m === 'real' ? 'active' : '';
+}
+
+function downloadCSV() {
+  if (!history.length) return;
+  const rows = ['index,emg'].concat(history.map((v, i) => i + ',' + v));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+  a.download = 'emg_data.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
